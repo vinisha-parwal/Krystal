@@ -1,21 +1,16 @@
-package com.flipkart.krystal.vajram.samples.greeting;
+package com.flipkart.krystal.vajram.exec.greeting;
 
 import static com.flipkart.krystal.datatypes.JavaType.java;
 import static com.flipkart.krystal.datatypes.StringType.string;
 import static com.flipkart.krystal.vajram.VajramID.vajramID;
-import static com.flipkart.krystal.vajram.samples.greeting.GreetingVajram.ID;
+import static com.flipkart.krystal.vajram.exec.greeting.GreetingVajram.ID;
 
 import com.flipkart.krystal.vajram.NonBlockingVajram;
 import com.flipkart.krystal.vajram.VajramDef;
 import com.flipkart.krystal.vajram.VajramLogic;
-import com.flipkart.krystal.vajram.inputs.BindFrom;
-import com.flipkart.krystal.vajram.inputs.Dependency;
-import com.flipkart.krystal.vajram.inputs.Input;
-import com.flipkart.krystal.vajram.inputs.InputCommand.Command;
-import com.flipkart.krystal.vajram.inputs.ResolutionSources;
-import com.flipkart.krystal.vajram.inputs.Resolve;
-import com.flipkart.krystal.vajram.inputs.VajramInputDefinition;
-import com.flipkart.krystal.vajram.samples.greeting.GreetingVajramInputUtils.EnrichedRequest;
+import com.flipkart.krystal.vajram.inputs.*;
+import com.google.common.collect.ImmutableList;
+
 import java.lang.System.Logger;
 import java.util.List;
 import java.util.logging.Level;
@@ -55,20 +50,6 @@ public abstract sealed class GreetingVajram extends NonBlockingVajram<String>
             .dataAccessSpec(vajramID(UserServiceVajram.ID))
             // If this dependency fails, fail this Vajram
             .isMandatory()
-            .build(),
-        Input.builder()
-            .name("log")
-            .type(java(Logger.class))
-            // This is not expected from clients
-            // This is expected to be injected by the runtime
-            .resolvableBy(ResolutionSources.SESSION)
-            .build(),
-        Input.builder()
-            // Data type of resolved dependencies is inferred from the
-            // dependency Vajram's Definition
-            .name("analytics_event_sink")
-            .type(java(AnalyticsEventSink.class))
-            .resolvableBy(ResolutionSources.SESSION)
             .build());
   }
 
@@ -76,19 +57,28 @@ public abstract sealed class GreetingVajram extends NonBlockingVajram<String>
   // is the responsibility of this Vajram (inputs of a vajram are resolved by its client Vajrams).
   // In this case the UserServiceVajram needs a user_id to retrieve user info from User Service.
   // So it's GreetingVajram's responsibility to provide that input.
-  @Resolve(value = "user_info", inputs = UserServiceVajram.USER_ID)
-  public String userIdForUserService(@BindFrom("user_id") String userId) {
-    return userId;
+  @Override
+  public ImmutableList<InputResolver> getSimpleInputResolvers() {
+    return ImmutableList.of(new ForwardingResolver(
+            "user_id",
+            "user_info",
+            "user_id",
+            (userId) -> new UserServiceVajramRequest((String) userId)));
   }
+  @Resolve(value = "user_info", inputs = "user_service_request")
+  public UserServiceVajramRequest userIdForUserService(@BindFrom("user_id") String userId) {
+    return new UserServiceVajramRequest(userId);
+  }
+
 
   // This is the core business logic of this Vajram
   // Sync vajrams can return any object. AsyncVajrams need to return {CompletableFuture}s
   @VajramLogic
-  public String createGreetingMessage(EnrichedRequest request) {
+  public String createGreetingMessage(GreetingVajramInputUtils.EnrichedRequest request) {
     String userId = request.userId();
     String greeting = "Hello " + request.userInfo().userName() + "! Hope you are doing well!";
-    request.log().log(Level.INFO, "Greeting user " + userId);
-    request.analyticsEventSink().pushEvent("event_type", new GreetingEvent(userId, greeting));
+//    request.log().log(Level.INFO, "Greeting user " + userId);
+//    request.analyticsEventSink().pushEvent("event_type", new GreetingEvent(userId, greeting));
     return greeting;
   }
 }

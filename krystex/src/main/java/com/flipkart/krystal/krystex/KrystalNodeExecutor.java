@@ -5,18 +5,13 @@ import static java.util.Collections.emptyList;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 
-import com.flipkart.krystal.krystex.commands.DependencyDone;
-import com.flipkart.krystal.krystex.commands.InitiateNode;
-import com.flipkart.krystal.krystex.commands.NewDataFromDependency;
-import com.flipkart.krystal.krystex.commands.NodeCommand;
-import com.flipkart.krystal.krystex.commands.ProvideInputValues;
+import com.flipkart.krystal.krystex.commands.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Queue;
+
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -34,14 +29,17 @@ public final class KrystalNodeExecutor implements KrystalExecutor {
   private boolean shutdownRequested;
   private boolean stopAcceptingRequests;
 
+  /* TODO integrate with node cache */
+  private Map<String, Map<String, ?>> inputCache = new HashMap<>();
+
   public KrystalNodeExecutor(NodeDefinitionRegistry nodeDefinitionRegistry, String requestId) {
     this.nodeRegistry = new NodeRegistry(nodeDefinitionRegistry);
     this.mainLoopTask =
-        newSingleThreadExecutor(
-                new ThreadFactoryBuilder()
-                    .setNameFormat("KrystalTaskExecutorMainThread-%s".formatted(requestId))
-                    .build())
-            .submit(this::mainLoop);
+            newSingleThreadExecutor(
+                    new ThreadFactoryBuilder()
+                            .setNameFormat("KrystalTaskExecutorMainThread-%s".formatted(requestId))
+                            .build())
+                    .submit(this::mainLoop);
   }
 
   public <T> Node<T> execute(NodeDefinition<T> nodeDefinition) {
@@ -50,21 +48,27 @@ public final class KrystalNodeExecutor implements KrystalExecutor {
     }
     // TODO Implement caching
     Node<T> node =
-        this.nodeRegistry.createIfAbsent(
-            nodeDefinition.nodeId(), () -> createNode(nodeDefinition, emptyList()));
+            this.nodeRegistry.createIfAbsent(
+                    nodeDefinition.nodeId(), () -> createNode(nodeDefinition, emptyList()));
     initiate(node);
     return node;
   }
 
   public <T> Node<T> executeWithInputs(
-      NodeDefinition<T> nodeDefinition, Map<String, ?> inputValues) {
+          NodeDefinition<T> nodeDefinition, Map<String, ?> inputValues) {
     Node<T> node = execute(nodeDefinition);
     provideInputs(node, inputValues);
     return node;
   }
 
   public void provideInputs(Node<?> node, Map<String, ?> inputValues) {
+    /* Cache inputs in case there are input resolvers */
+    inputCache.put(node.getNodeId(), ImmutableMap.copyOf(inputValues));
     getCommandQueue().add(new ProvideInputValues(node, ImmutableMap.copyOf(inputValues)));
+  }
+
+  public void adaptInputs(Node<?> node, Map<String, ?> inputValues) {
+    getCommandQueue().add(new AdaptInputs(node, ImmutableMap.copyOf(inputValues)));
   }
 
   private void initiate(Node<?> node) {
@@ -72,9 +76,9 @@ public final class KrystalNodeExecutor implements KrystalExecutor {
   }
 
   private void executeWithNewData(
-      Node<?> node, String depNodeId, Collection<? extends SingleResult<?>> results) {
+          Node<?> node, String depNodeId, Collection<? extends SingleResult<?>> results) {
     getCommandQueue()
-        .add(new NewDataFromDependency(node, depNodeId, ImmutableList.copyOf(results)));
+            .add(new NewDataFromDependency(node, depNodeId, ImmutableList.copyOf(results)));
   }
 
   private void markDependencyDone(Node<?> node, String depNodeId) {
@@ -84,6 +88,7 @@ public final class KrystalNodeExecutor implements KrystalExecutor {
   private void mainLoop() {
     while (!shutdownRequested) {
       try {
+
         NodeCommand currentCommand = mainQueue.take();
         Node<?> node = currentCommand.node();
         if (currentCommand instanceof InitiateNode) {
@@ -92,23 +97,41 @@ public final class KrystalNodeExecutor implements KrystalExecutor {
             // unnecessarily
             continue;
           }
-          if (!initiatePendingInputs(node)) {
+          if (!node.definition().inputAdoptionSources().isEmpty()) {
+            node.markDependenciesInitiated();
+            if (!node.definition().inputAdoptionSources().isEmpty()) {
+              for(String nodeId : node.definition().inputAdoptionSources()) {
+                adaptInputs(node, inputCache.get(nodeId));
+              }
+            }
+          } else if (!initiatePendingInputs(node)) {
             node.executeIfNoDependenciesAndMarkDone();
           }
         } else if (currentCommand instanceof NewDataFromDependency newDataFromDependency) {
           node.executeWithNewDataForDependencyNode(
-              newDataFromDependency.dependencyNodeId(), newDataFromDependency.newData());
+                  newDataFromDependency.dependencyNodeId(), newDataFromDependency.newData());
         } else if (currentCommand instanceof DependencyDone dependencyDone) {
           node.markDependencyNodeDone(dependencyDone.depNodeId());
+        } else  if (currentCommand instanceof AdaptInputs inputValues) {
+          List<Request> requestList = new LinkedList<>();
+          inputValues.values().forEach(
+                  (input, value) -> {
+                    Map<String, SingleResult<?>> requestMap = new HashMap<>();
+                    requestMap.put(input, new SingleResult<>(completedFuture(value)));
+                    requestList.add(new Request(ImmutableMap.copyOf(requestMap)));
+                  });
+          if (!initiatePendingInputs(node)) {
+            node.executeWithInputs(ImmutableList.copyOf(requestList));
+          }
         } else if (currentCommand instanceof ProvideInputValues provideInputValues) {
           provideInputValues
-              .values()
-              .forEach(
-                  (input, value) -> {
-                    node.executeWithNewDataForInput(
-                        input, ImmutableList.of(new SingleResult<>(completedFuture(value))));
-                    node.markInputDone(input);
-                  });
+                  .values()
+                  .forEach(
+                          (input, value) -> {
+                            node.executeWithNewDataForInput(
+                                    input, ImmutableList.of(new SingleResult<>(completedFuture(value))));
+                            node.markInputDone(input);
+                          });
         }
       } catch (InterruptedException ignored) {
 
@@ -123,7 +146,7 @@ public final class KrystalNodeExecutor implements KrystalExecutor {
   private boolean initiatePendingInputs(Node<?> node) {
     ImmutableSet<String> inputNames = node.definition().inputNames();
     ImmutableSet<String> dependencyNodeIds =
-        ImmutableSet.copyOf(node.definition().inputProviders().values());
+            ImmutableSet.copyOf(node.definition().inputProviders().values());
     if (node.wereDependenciesInitiated()) {
       return !inputNames.isEmpty();
     }
@@ -138,9 +161,11 @@ public final class KrystalNodeExecutor implements KrystalExecutor {
       } else if (!depNode.wasInitiated()) {
         initiate(depNode);
       }
-      depNode.whenDone(() -> markDependencyDone(node, depNodeId));
+      depNode.whenDone(() -> {
+        markDependencyDone(node, depNodeId);
+      });
       depNode.whenNewDataAvailable(
-          singleResults -> executeWithNewData(node, depNodeId, singleResults));
+              singleResults -> executeWithNewData(node, depNodeId, singleResults));
     }
     node.markDependenciesInitiated();
     return true;

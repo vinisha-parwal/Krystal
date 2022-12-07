@@ -11,12 +11,14 @@ import java.util.concurrent.CompletableFuture;
 import org.checkerframework.checker.nullness.qual.NonNull;
 
 public abstract sealed class NodeDefinition<T>
-    permits BlockingNodeDefinition, NonBlockingNodeDefinition {
+        permits BlockingNodeDefinition, NonBlockingNodeDefinition {
 
   private final String nodeId;
   private final Set<String> inputNames = new LinkedHashSet<>();
   private final Map<String, String> inputNamesToProvider = new LinkedHashMap<>();
   private final Set<String> dependants = new LinkedHashSet<>();
+  /* Used in input binders where a node can adopt input of another node based on binding */
+  private final Set<String> inputAdoptionSourceNodes = new LinkedHashSet<>();
 
   NodeDefinition(String nodeId, Set<String> inputNames, Map<String, String> inputNamesToProvider) {
     this.nodeId = nodeId;
@@ -39,12 +41,14 @@ public abstract sealed class NodeDefinition<T>
     if (inputNamesToProvider.containsKey(inputName)) {
       throw new IllegalArgumentException("Input %s already has a provider node registered");
     }
-    addInputWithoutProvider(inputName);
+    if (!inputNames.contains(inputName)) {
+      addInputWithoutProvider(inputName);
+    }
     inputNamesToProvider.put(inputName, nodeId);
   }
 
   public abstract CompletableFuture<ImmutableList<T>> logic(
-      ImmutableMap<String, ?> dependencyValues);
+          ImmutableMap<String, ?> dependencyValues);
 
   public String nodeId() {
     return nodeId;
@@ -56,5 +60,13 @@ public abstract sealed class NodeDefinition<T>
 
   public ImmutableSet<String> inputNames() {
     return ImmutableSet.copyOf(inputNames);
+  }
+
+  public void addInputAdaptionSource(String nodeId) {
+    this.inputAdoptionSourceNodes.add(nodeId);
+  }
+
+  public ImmutableSet<String> inputAdoptionSources() {
+    return ImmutableSet.copyOf(inputAdoptionSourceNodes);
   }
 }

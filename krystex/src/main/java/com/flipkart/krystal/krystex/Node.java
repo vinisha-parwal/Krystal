@@ -46,7 +46,7 @@ public final class Node<T> {
   private final AtomicReference<NodeState> nodeState = new AtomicReference<>(NEW);
 
   private final List<Consumer<ImmutableCollection<SingleResult<T>>>> newDataSubscriptions =
-      new ArrayList<>();
+          new ArrayList<>();
   /** Remembers whether newDataSubscriptions were notified about results of a request */
   private final Map<Request, CompletableFuture<?>> dataTransferDone = new LinkedHashMap<>();
 
@@ -58,12 +58,12 @@ public final class Node<T> {
   private final CompletableFuture<ImmutableList<T>> allResults = new CompletableFuture<>();
 
   public static <T> Node<T> createNode(
-      NodeDefinition<T> nodeDefinition, List<LogicDecorationStrategy> decorationStrategies) {
+          NodeDefinition<T> nodeDefinition, List<LogicDecorationStrategy> decorationStrategies) {
     return new Node<>(nodeDefinition, decorationStrategies);
   }
 
   private Node(
-      NodeDefinition<T> nodeDefinition, List<LogicDecorationStrategy> decorationStrategies) {
+          NodeDefinition<T> nodeDefinition, List<LogicDecorationStrategy> decorationStrategies) {
     this.nodeDefinition = nodeDefinition;
     this.decorationStrategies = decorationStrategies;
     this.nodeId = nodeDefinition.nodeId();
@@ -76,7 +76,7 @@ public final class Node<T> {
   void markInputDone(String input) {
     inputsDone.put(input, true);
     boolean allDependenciesDone =
-        nodeDefinition.inputNames().stream().allMatch(key -> inputsDone.getOrDefault(key, false));
+            nodeDefinition.inputNames().stream().allMatch(key -> inputsDone.getOrDefault(key, false));
     if (allDependenciesDone) {
       markDone();
     }
@@ -87,7 +87,6 @@ public final class Node<T> {
       throw new IllegalStateException("This node has input");
     }
     execute(ImmutableList.of(new Request()));
-    markDone();
   }
 
   void executeWithNewDataForDependencyNode(String depNodeId, Collection<SingleResult<?>> newData) {
@@ -97,9 +96,9 @@ public final class Node<T> {
 
   private Set<String> getInputsProvidedByNode(String depNodeId) {
     return nodeDefinition.inputProviders().entrySet().stream()
-        .filter(entry -> Objects.equals(entry.getValue(), depNodeId))
-        .map(Entry::getKey)
-        .collect(Collectors.toSet());
+            .filter(entry -> Objects.equals(entry.getValue(), depNodeId))
+            .map(Entry::getKey)
+            .collect(Collectors.toSet());
   }
 
   /**
@@ -114,12 +113,12 @@ public final class Node<T> {
   void executeWithNewDataForInput(String input, Collection<SingleResult<?>> newData) {
     if (!newData.stream().map(SingleResult::future).allMatch(CompletableFuture::isDone)) {
       throw new IllegalArgumentException(
-          "executeWithNewDataForInput can only be called after the data is ready");
+              "executeWithNewDataForInput can only be called after the data is ready");
     }
     if (!INITIATED.equals(nodeState.get())
-        && !nodeState.compareAndSet(DEPENDENCIES_INITIATED, INITIATED)) {
+            && !nodeState.compareAndSet(DEPENDENCIES_INITIATED, INITIATED)) {
       throw new IllegalStateException(
-          "Only DEPENDENCIES_INITIATED and INITIATED nodes can be executed");
+              "Only DEPENDENCIES_INITIATED and INITIATED nodes can be executed");
     }
 
     getResultsForInput(input).addAll(newData);
@@ -131,13 +130,13 @@ public final class Node<T> {
     }
     // Get data for all other dependencies...
     Map<String, Collection<SingleResult<?>>> newDataCombinations =
-        new LinkedHashMap<>(Maps.filterKeys(resultsForInput, k -> !Objects.equals(k, input)));
+            new LinkedHashMap<>(Maps.filterKeys(resultsForInput, k -> !Objects.equals(k, input)));
     // ...and add this new data so that all new permutations of requests are executed.
     newDataCombinations.put(input, ImmutableList.copyOf(newData));
     ImmutableList<Request> requests =
-        createIndividualRequestsFromBatchResponses(newDataCombinations).stream()
-            .map(Request::new)
-            .collect(toImmutableList());
+            createIndividualRequestsFromBatchResponses(newDataCombinations).stream()
+                    .map(Request::new)
+                    .collect(toImmutableList());
     execute(requests);
   }
 
@@ -149,45 +148,45 @@ public final class Node<T> {
       BatchResult<T> resultsForRequest;
       if (request.asMap().values().stream().anyMatch(SingleResult::isFailure)) {
         ImmutableMap<String, Throwable> reasons =
-            request.asMap().entrySet().stream()
-                .filter(e -> e.getValue().isFailure())
-                .collect(
-                    toImmutableMap(
-                        Entry::getKey,
-                        e ->
-                            e.getValue()
-                                .future()
-                                .handle((o, throwable1) -> throwable1)
-                                .getNow(null)));
+                request.asMap().entrySet().stream()
+                        .filter(e -> e.getValue().isFailure())
+                        .collect(
+                                toImmutableMap(
+                                        Entry::getKey,
+                                        e ->
+                                                e.getValue()
+                                                        .future()
+                                                        .handle((o, throwable1) -> throwable1)
+                                                        .getNow(null)));
 
         resultsForRequest =
-            new BatchResult<>(failedFuture(new MandatoryDependencyFailureException(reasons)));
+                new BatchResult<>(failedFuture(new MandatoryDependencyFailureException(reasons)));
       } else {
         resultsForRequest =
-            new BatchResult<>(decoratedLogic().apply(getValuesForConsumption(request)));
+                new BatchResult<>(decoratedLogic().apply(getValuesForConsumption(request)));
       }
       newResults.put(request, resultsForRequest);
     }
     // Notify dependants that new data is available from this node
     newResults.forEach(
-        (request, batchResult) -> {
-          dataTransferDone.put(
-              request,
-              batchResult
-                  .future()
-                  .handle(
-                      (ts, throwable) -> {
-                        synchronized (newDataSubscriptions) {
-                          try {
-                            newDataSubscriptions.forEach(
-                                c -> c.accept(batchResult.toSingleResults()));
-                          } catch (Exception e) {
-                            log.warn("Exception when notifying new Data availability", e);
-                          }
-                        }
-                        return null;
-                      }));
-        });
+            (request, batchResult) -> {
+              dataTransferDone.put(
+                      request,
+                      batchResult
+                              .future()
+                              .handle(
+                                      (ts, throwable) -> {
+                                        synchronized (newDataSubscriptions) {
+                                          try {
+                                            newDataSubscriptions.forEach(
+                                                    c -> c.accept(batchResult.toSingleResults()));
+                                          } catch (Exception e) {
+                                            log.warn("Exception when notifying new Data availability", e);
+                                          }
+                                        }
+                                        return null;
+                                      }));
+            });
     resultsByRequest.putAll(newResults);
     return ImmutableMap.copyOf(newResults);
   }
@@ -234,17 +233,17 @@ public final class Node<T> {
    * </pre>
    */
   private static ImmutableList<ImmutableMap<String, SingleResult<?>>>
-      createIndividualRequestsFromBatchResponses(
+  createIndividualRequestsFromBatchResponses(
           Map<String, Collection<SingleResult<?>>> batchResults) {
     if (batchResults.isEmpty()) {
       return ImmutableList.of(ImmutableMap.of());
     }
     String first = batchResults.keySet().iterator().next();
     ImmutableList<ImmutableMap<String, SingleResult<?>>> individualRequestsFromBatchResponses =
-        createIndividualRequestsFromBatchResponses(
-            // Create a subMapView of all keys except the first one.
-            Maps.filterKeys(
-                batchResults, key -> !Objects.equals(first, key) && batchResults.containsKey(key)));
+            createIndividualRequestsFromBatchResponses(
+                    // Create a subMapView of all keys except the first one.
+                    Maps.filterKeys(
+                            batchResults, key -> !Objects.equals(first, key) && batchResults.containsKey(key)));
     ImmutableList.Builder<ImmutableMap<String, SingleResult<?>>> answer = ImmutableList.builder();
     for (ImmutableMap<String, SingleResult<?>> subMap : individualRequestsFromBatchResponses) {
       Builder<String, SingleResult<?>> builder = ImmutableMap.builder();
@@ -257,44 +256,44 @@ public final class Node<T> {
 
   private void markDone() {
     ImmutableList<BatchResult<T>> listOfBatches =
-        resultsByRequest.values().stream().collect(toImmutableList());
+            resultsByRequest.values().stream().collect(toImmutableList());
     allOf(listOfBatches.stream().map(BatchResult::future).toArray(CompletableFuture[]::new))
-        .thenCompose(
-            void1 -> {
-              //noinspection unchecked
-              CompletableFuture<T>[] cfs =
-                  listOfBatches.stream()
-                      .map(BatchResult::toSingleResults)
-                      .flatMap(Collection::stream)
-                      .map(SingleResult::future)
-                      .toArray(CompletableFuture[]::new);
-              return allOf(cfs)
-                  .thenApply(
-                      void2 -> stream(cfs).map(f -> f.getNow(null)).collect(toImmutableList()));
-            })
-        .whenComplete(
-            (ts, throwable) -> {
-              if (throwable != null) {
-                allResults.completeExceptionally(throwable);
-              } else {
-                allResults.complete(ts);
-              }
-              nodeState.set(DONE);
-              synchronized (doneSubscriptions) {
-                for (Runnable runnable : doneSubscriptions) {
-                  try {
-                    runnable.run();
-                  } catch (Exception e) {
-                    log.error("Error while notifying done subscriptions", e);
-                  }
-                }
-              }
-            });
+            .thenCompose(
+                    void1 -> {
+                      //noinspection unchecked
+                      CompletableFuture<T>[] cfs =
+                              listOfBatches.stream()
+                                      .map(BatchResult::toSingleResults)
+                                      .flatMap(Collection::stream)
+                                      .map(SingleResult::future)
+                                      .toArray(CompletableFuture[]::new);
+                      return allOf(cfs)
+                              .thenApply(
+                                      void2 -> stream(cfs).map(f -> f.getNow(null)).collect(toImmutableList()));
+                    })
+            .whenComplete(
+                    (ts, throwable) -> {
+                      if (throwable != null) {
+                        allResults.completeExceptionally(throwable);
+                      } else {
+                        allResults.complete(ts);
+                      }
+                      nodeState.set(DONE);
+                      synchronized (doneSubscriptions) {
+                        for (Runnable runnable : doneSubscriptions) {
+                          try {
+                            runnable.run();
+                          } catch (Exception e) {
+                            log.error("Error while notifying done subscriptions", e);
+                          }
+                        }
+                      }
+                    });
   }
 
   private Function<ImmutableMap<String, ?>, CompletableFuture<ImmutableList<T>>> decoratedLogic() {
     Function<ImmutableMap<String, ?>, CompletableFuture<ImmutableList<T>>> logic =
-        nodeDefinition::logic;
+            nodeDefinition::logic;
     for (LogicDecorationStrategy decorationStrategy : decorationStrategies) {
       logic = decorationStrategy.decorateLogic(this, logic);
     }
@@ -316,18 +315,18 @@ public final class Node<T> {
   public void whenNewDataAvailable(Consumer<ImmutableCollection<SingleResult<T>>> newDataConsumer) {
     synchronized (newDataSubscriptions) {
       ImmutableSet<Request> newDataNotifiedRequests =
-          this.dataTransferDone.entrySet().stream()
-              .filter(e -> e.getValue().isDone())
-              .map(Entry::getKey)
-              .collect(toImmutableSet());
+              this.dataTransferDone.entrySet().stream()
+                      .filter(e -> e.getValue().isDone())
+                      .map(Entry::getKey)
+                      .collect(toImmutableSet());
       newDataConsumer.accept(
-          resultsByRequest.entrySet().stream()
-              .filter(e -> newDataNotifiedRequests.contains(e.getKey()))
-              .map(Entry::getValue)
-              .filter(tBatchResult -> tBatchResult.future().isDone())
-              .map(BatchResult::toSingleResults)
-              .flatMap(Collection::stream)
-              .collect(toImmutableList()));
+              resultsByRequest.entrySet().stream()
+                      .filter(e -> newDataNotifiedRequests.contains(e.getKey()))
+                      .map(Entry::getValue)
+                      .filter(tBatchResult -> tBatchResult.future().isDone())
+                      .map(BatchResult::toSingleResults)
+                      .flatMap(Collection::stream)
+                      .collect(toImmutableList()));
       this.newDataSubscriptions.add(newDataConsumer);
     }
   }
@@ -345,8 +344,8 @@ public final class Node<T> {
   public void markDependenciesInitiated() {
     if (!this.nodeState.compareAndSet(NEW, DEPENDENCIES_INITIATED)) {
       throw new IllegalStateException(
-          "DEPENDENCIES_INITIATED state should follow NEW state, not %s"
-              .formatted(nodeState.get()));
+              "DEPENDENCIES_INITIATED state should follow NEW state, not %s"
+                      .formatted(nodeState.get()));
     }
   }
 
@@ -360,5 +359,11 @@ public final class Node<T> {
 
   private Collection<SingleResult<?>> getResultsForInput(String input) {
     return resultsForInput.computeIfAbsent(input, k -> new ArrayList<>());
+  }
+
+  public ImmutableMap<Request, BatchResult<T>> executeWithInputs(ImmutableList<Request> requestList) {
+    ImmutableMap<Request, BatchResult<T>> result = execute(requestList);
+    markDone();
+    return result;
   }
 }

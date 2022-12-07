@@ -16,6 +16,7 @@ class KrystexVajramExecutorTest {
   @Test
   void requestExecution_vajramWithNoDependencies_success()
       throws ExecutionException, InterruptedException, TimeoutException {
+    System.out.println("Test started");
     VajramGraph vajramGraph =
         loadFromClasspath("com.flipkart.krystal.vajram.exec.test_vajrams.hello");
     try (KrystexVajramExecutor krystexVajramExecutor =

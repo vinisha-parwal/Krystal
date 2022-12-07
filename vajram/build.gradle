@@ -13,7 +13,9 @@ dependencies {
     implementation project(':krystex')
 
     implementation 'com.google.guava:guava:31.1-jre'
-    implementation 'org.reflections:reflections:0.10.2'
+    implementation ('org.reflections:reflections:0.10.2'){
+        exclude group:'org.slf4j', module:'slf4j-api'
+    }
 
     annotationProcessor 'org.projectlombok:lombok:1.18.24'
     compileOnly 'org.projectlombok:lombok:1.18.24'

@@ -1,4 +1,4 @@
-package com.flipkart.krystal.vajram.samples.greeting;
+package com.flipkart.krystal.vajram.exec.greeting;
 
 public class AnalyticsEventSink {
 

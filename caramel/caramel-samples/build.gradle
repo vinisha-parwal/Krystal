@@ -13,6 +13,7 @@ dependencies {
     implementation project(':caramel')
     implementation 'com.google.guava:guava:31.1-jre'
 
+    annotationProcessor 'org.projectlombok:lombok:1.18.24'
     compileOnly 'org.projectlombok:lombok:1.18.24'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'

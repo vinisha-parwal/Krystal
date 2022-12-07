@@ -8,11 +8,10 @@ import lombok.Builder;
 
 @Builder
 public record ForwardingResolver(
-    String from, String dependencyName, String targetInputName, Function<?, ?> using)
-    implements InputResolver {
-  public static ForwardingResolverBuilder forwardResolve(
-      String dependencyName, String targetInputName) {
-    return builder().dependencyName(dependencyName).targetInputName(targetInputName);
+        String from, String dependencyName, String targetInputName, Function<?, ?> using)
+        implements InputResolver {
+  public static ForwardingResolverBuilder forwardResolve(String from, String dependencyName, String targetInputName) {
+    return builder().from(from).dependencyName(dependencyName).targetInputName(targetInputName);
   }
 
   @Override
